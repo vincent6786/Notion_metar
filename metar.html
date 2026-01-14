@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notion METAR Widget</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #37352f;
+            --secondary-text: #9b9a97;
+            --border-color: #e6e6e6;
+            --vfr-color: #2ecc71;
+            --mvfr-color: #3498db;
+            --ifr-color: #e74c3c;
+            --lifr-color: #9b59b6;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #191919;
+                --text-color: #d9d9d9;
+                --secondary-text: #9b9a97;
+                --border-color: #2f2f2f;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 14px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        input {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: inherit;
+            width: 60px;
+            text-transform: uppercase;
+        }
+
+        button {
+            background: var(--text-color);
+            color: var(--bg-color);
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .flight-category {
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: white;
+            font-size: 12px;
+            display: none; /* Hidden until data loads */
+        }
+
+        .data-row {
+            display: flex;
+            gap: 1rem;
+            font-size: 13px;
+        }
+
+        .raw-metar {
+            font-family: 'SF Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
+            background: rgba(155, 154, 151, 0.1);
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            line-height: 1.4;
+            color: var(--text-color);
+            word-wrap: break-word;
+        }
+
+        .label {
+            color: var(--secondary-text);
+            font-size: 11px;
+            margin-bottom: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div style="display:flex; gap:8px; align-items:center;">
+            <input type="text" id="icaoInput" value="RCTP" placeholder="ICAO">
+            <button onclick="fetchMetar()">Check</button>
+        </div>
+        <div id="categoryBadge" class="flight-category"></div>
+    </div>
+
+    <div id="weatherData" style="display:none; flex-direction:column; gap:10px; margin-top:10px;">
+        
+        <div class="data-row">
+            <div>
+                <div class="label">WIND</div>
+                <div id="windData">--</div>
+            </div>
+            <div>
+                <div class="label">VISIBILITY</div>
+                <div id="visData">--</div>
+            </div>
+            <div>
+                <div class="label">ALTIMETER</div>
+                <div id="altData">--</div>
+            </div>
+        </div>
+
+        <div>
+            <div class="label">RAW METAR</div>
+            <div id="rawText" class="raw-metar">Loading...</div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        // Get a free token from https://avwx.rest/
+        const AVWX_TOKEN = 'dMzS0-M9_ku1bYySTtsq4pZE8fEEiTUJaNtvqSDEgUs'; 
+        // ---------------------
+
+        async function fetchMetar() {
+            const icao = document.getElementById('icaoInput').value.toUpperCase();
+            const weatherDiv = document.getElementById('weatherData');
+            const catBadge = document.getElementById('categoryBadge');
+            
+            if(!icao) return;
+
+            // Show loading state
+            weatherDiv.style.display = 'flex';
+            document.getElementById('rawText').innerText = 'Fetching...';
+            catBadge.style.display = 'none';
+
+            try {
+                const response = await fetch(`https://avwx.rest/api/metar/${icao}`, {
+                    headers: {
+                        'Authorization': `Bearer ${AVWX_TOKEN}`
+                    }
+                });
+
+                if (!response.ok) throw new Error('Station not found or API error');
+
+                const data = await response.json();
+
+                // 1. Update Flight Category Badge
+                // AVWX returns flight_rules like "VFR", "MVFR", "IFR"
+                const rules = data.flight_rules; 
+                catBadge.innerText = rules;
+                catBadge.style.display = 'block';
+                
+                // Color coding
+                if (rules === 'VFR') catBadge.style.backgroundColor = 'var(--vfr-color)';
+                else if (rules === 'MVFR') catBadge.style.backgroundColor = 'var(--mvfr-color)';
+                else if (rules === 'IFR') catBadge.style.backgroundColor = 'var(--ifr-color)';
+                else catBadge.style.backgroundColor = 'var(--lifr-color)';
+
+                // 2. Decoded Data
+                document.getElementById('windData').innerText = `${data.wind_direction?.value}° at ${data.wind_speed?.value}kts`;
+                document.getElementById('visData').innerText = `${data.visibility?.value} sm`;
+                document.getElementById('altData').innerText = `${data.altimeter?.value} inHg`;
+
+                // 3. Raw Text
+                document.getElementById('rawText').innerText = data.raw;
+
+            } catch (error) {
+                console.error(error);
+                document.getElementById('rawText').innerText = "Error: Could not fetch METAR. Check ICAO code or API Token.";
+                catBadge.style.display = 'none';
+            }
+        }
+
+        // Fetch default on load
+        fetchMetar();
+    </script>
+</body>
+</html>
